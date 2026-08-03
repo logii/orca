@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Columns3, Orbit, XIcon } from 'lucide-react'
 import {
   DASHBOARD_BUCKET_ORDER,
@@ -21,11 +21,16 @@ import {
 import './agent-board-transitions.css'
 import { translate } from '@/i18n/i18n'
 import { Button } from '@/components/ui/button'
-import { AgentMap } from './AgentMap'
 import { AgentMapInspectorDrawer } from './AgentMapInspectorDrawer'
 import { useFleetResultDisposition } from './use-fleet-result-disposition'
+import { lazyWithRetry } from '@/lib/lazy-with-retry'
 
 export type AgentDashboardView = 'map' | 'board'
+
+const AgentMap = lazyWithRetry(
+  () => import('./AgentMap').then((module) => ({ default: module.AgentMap })),
+  { reloadKey: 'agent-map' }
+)
 
 /** Ack an agent in the pop-out window: relayed over IPC to the main renderer.
  *  ?. shields dialog-opening from dev-HMR preload skew (renderer updates hot,
@@ -330,15 +335,17 @@ export function AgentKanbanBoard({
         />
         {view !== 'board' ? (
           <div className="flex min-h-0 flex-1">
-            <AgentMap
-              cards={filteredCards}
-              now={now}
-              selectedPaneKey={dialogCard?.paneKey}
-              pinnedPaneKeys={pinnedPaneKeys}
-              reviewedPaneKeys={reviewedPaneKeys}
-              onMarkReviewed={markReviewed}
-              onOpenTerminal={handleOpenInspector}
-            />
+            <Suspense fallback={null}>
+              <AgentMap
+                cards={filteredCards}
+                now={now}
+                selectedPaneKey={dialogCard?.paneKey}
+                pinnedPaneKeys={pinnedPaneKeys}
+                reviewedPaneKeys={reviewedPaneKeys}
+                onMarkReviewed={markReviewed}
+                onOpenTerminal={handleOpenInspector}
+              />
+            </Suspense>
             {dialogCard ? (
               <AgentMapInspectorDrawer
                 key={`${dialogCard.paneKey}:${dialogCard.viewMode ?? 'terminal'}`}

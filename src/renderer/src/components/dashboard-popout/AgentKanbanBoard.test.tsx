@@ -3,6 +3,8 @@
 import '@testing-library/jest-dom/vitest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type {
   DashboardCard,
   DashboardFilterOptions,
@@ -188,22 +190,33 @@ describe('AgentKanbanBoard', () => {
     expect(headers.map((h) => h.textContent)).toEqual(['Needs You', 'Working', 'Done'])
   })
 
-  it('keeps the dashboard and map available as separate views', () => {
+  it('loads the map as a recoverable dynamic chunk', () => {
+    const source = readFileSync(
+      resolve(process.cwd(), 'src/renderer/src/components/dashboard-popout/AgentKanbanBoard.tsx'),
+      'utf8'
+    )
+
+    expect(source).toContain("import { lazyWithRetry } from '@/lib/lazy-with-retry'")
+    expect(source).toMatch(/lazyWithRetry\(\s*\(\) => import\('\.\/AgentMap'\)/)
+    expect(source).not.toMatch(/import\s+(?:\{[^}]*\}|\w+)\s+from\s+['"]\.\/AgentMap['"]/)
+  })
+
+  it('keeps the dashboard and map available as separate views', async () => {
     renderBoard([])
 
     fireEvent.click(screen.getByRole('button', { name: 'Agent Map' }))
-    expect(screen.getByText('Live containment map')).toBeInTheDocument()
+    expect(await screen.findByText('Live containment map')).toBeInTheDocument()
     expect(screen.getByText('Focus view')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'Dashboard' }))
     expect(screen.getByText('Needs You')).toBeInTheDocument()
   })
 
-  it('keeps the selected map mounted beneath its terminal drawer', () => {
+  it('keeps the selected map mounted beneath its terminal drawer', async () => {
     const agent = card({ paneKey: 'map-agent', conversationName: 'Map agent' })
     render(<AgentKanbanBoard snapshot={{ generatedAt: 1, cards: [agent] }} initialView="map" />)
 
-    fireEvent.click(screen.getByRole('button', { name: /Map agent/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Map agent/ }))
 
     expect(screen.getByLabelText('Nested project, workspace, and agent map')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-panel')).toHaveAttribute('data-pty-id', 'p1')
@@ -217,7 +230,7 @@ describe('AgentKanbanBoard', () => {
     expect(screen.queryByTestId('terminal-dialog')).not.toBeInTheDocument()
   })
 
-  it('opens native chat on the map-selected side and can switch to terminal preview', () => {
+  it('opens native chat on the map-selected side and can switch to terminal preview', async () => {
     vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1000)
     vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue(
       new DOMRect(800, 0, 100, 100)
@@ -229,7 +242,7 @@ describe('AgentKanbanBoard', () => {
     })
     render(<AgentKanbanBoard snapshot={{ generatedAt: 1, cards: [agent] }} initialView="map" />)
 
-    fireEvent.click(screen.getByRole('button', { name: /Native map agent/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Native map agent/ }))
 
     const chatPanel = screen.getByTestId('chat-panel')
     expect(chatPanel).toHaveClass('m-0', 'rounded-none', 'shadow-none')
@@ -244,12 +257,12 @@ describe('AgentKanbanBoard', () => {
     expect(screen.queryByTestId('chat-panel')).not.toBeInTheDocument()
   })
 
-  it('switches an open map inspector when the live tab enters native chat', () => {
+  it('switches an open map inspector when the live tab enters native chat', async () => {
     const terminalAgent = card({ paneKey: 'switching-agent', conversationName: 'Switching agent' })
     const { rerender } = render(
       <AgentKanbanBoard snapshot={{ generatedAt: 1, cards: [terminalAgent] }} initialView="map" />
     )
-    fireEvent.click(screen.getByRole('button', { name: /Switching agent/ }))
+    fireEvent.click(await screen.findByRole('button', { name: /Switching agent/ }))
     expect(screen.getByTestId('terminal-panel')).toBeInTheDocument()
 
     rerender(
@@ -468,7 +481,7 @@ describe('AgentKanbanBoard', () => {
     expect(ackAgent).toHaveBeenCalledWith('pk-ack')
   })
 
-  it('keeps a newly opened result in Focus until it is explicitly reviewed', () => {
+  it('keeps a newly opened result in Focus until it is explicitly reviewed', async () => {
     const fresh = card({
       paneKey: 'fresh-result',
       bucket: 'done',
@@ -489,7 +502,7 @@ describe('AgentKanbanBoard', () => {
       <AgentKanbanBoard snapshot={{ generatedAt: 1, cards: [fresh, old] }} initialView="map" />
     )
 
-    expect(screen.getByRole('button', { name: /Fresh result/ })).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: /Fresh result/ })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Old result/ })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Fresh result/ }))
     expect(screen.getByTestId('terminal-panel')).toHaveAttribute('data-reviewed', 'false')

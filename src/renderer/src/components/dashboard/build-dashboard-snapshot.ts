@@ -40,8 +40,8 @@ import {
   type DashboardCardContextState
 } from './dashboard-card-context'
 import {
-  collectActiveDashboardWorkspaces,
-  dashboardCardHostKind
+  dashboardCardMapWorkspaceMetadata,
+  collectActiveDashboardWorkspaces
 } from './dashboard-snapshot-workspaces'
 import {
   boundedDashboardCardLabel,
@@ -104,7 +104,8 @@ export function buildDashboardSnapshot(
   const repoIconsByRepoId: Record<string, RepoIcon | null> = {}
   const includeCardDetails = options.includeCardDetails !== false
   const generatedTitlesEnabled = state.settings?.tabAutoGenerateTitle === true
-  const activeWorktrees = collectActiveDashboardWorkspaces(state)
+  const showIdle = state.settings?.experimentalAgentDashboardShowIdle === true
+  const activeWorktrees = collectActiveDashboardWorkspaces(state, includeCardDetails)
   const filterOptions =
     options.includeFilterOptions === false
       ? undefined
@@ -149,7 +150,9 @@ export function buildDashboardSnapshot(
   for (const workspace of activeWorktrees) {
     const { repo, worktree } = workspace
     const worktreeId = worktree.id
-    const nativeChatTabIds = dashboardNativeChatTabIds(state, worktreeId)
+    const nativeChatTabIds = includeCardDetails
+      ? dashboardNativeChatTabIds(state, worktreeId)
+      : undefined
     const liveEntries = selectLiveAgentStatusEntriesForWorktree(state, worktreeId)
     const migrationUnsupported = selectMigrationUnsupportedEntriesForWorktree(state, worktreeId)
     const entries =
@@ -262,17 +265,20 @@ export function buildDashboardSnapshot(
         worktreeId,
         tabId,
         leafId,
-        parentPaneKey: dashboardCardParentPaneKey(row),
         repoName: boundedDashboardCardLabel(workspace.projectName),
         worktreeName: boundedDashboardCardLabel(worktree.displayName),
-        hostKind: dashboardCardHostKind(
-          workspace,
-          ptyId,
-          terminalInput ?? undefined,
-          clientHost.platform
-        ),
-        workspaceKind: workspace.workspaceKind,
-        viewMode: nativeChatTabIds.has(tabId) ? 'chat' : 'terminal',
+        ...(includeCardDetails
+          ? {
+              parentPaneKey: dashboardCardParentPaneKey(row),
+              ...dashboardCardMapWorkspaceMetadata(
+                workspace,
+                ptyId,
+                terminalInput ?? undefined,
+                clientHost.platform
+              ),
+              viewMode: nativeChatTabIds?.has(tabId) ? 'chat' : 'terminal'
+            }
+          : {}),
         workspaceStatusId: context?.workspaceStatus.id,
         workspaceStatusLabel: context?.workspaceStatus.label,
         workspaceStatusColor: context?.workspaceStatus.color,
@@ -304,11 +310,5 @@ export function buildDashboardSnapshot(
     }
   }
 
-  return {
-    generatedAt: now,
-    cards,
-    showIdle: state.settings?.experimentalAgentDashboardShowIdle === true,
-    filterOptions,
-    repoIconsByRepoId
-  }
+  return { generatedAt: now, cards, showIdle, filterOptions, repoIconsByRepoId }
 }

@@ -7,6 +7,7 @@ import type {
   DashboardCard,
   DashboardCardTerminalInput
 } from '../../../../shared/dashboard-snapshot'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { AgentTerminalDialog, AgentTerminalPanel } from './AgentTerminalDialog'
 
 // Stub the preview so the assertion is on the props the dialog hands it, with
@@ -135,8 +136,30 @@ describe('AgentTerminalDialog', () => {
   it('reuses the terminal surface as a non-modal adjacent panel', () => {
     render(<AgentTerminalPanel card={card()} onOpenChange={() => {}} onReveal={() => {}} />)
 
+    expect(screen.getByRole('dialog', { name: 'wt' })).toHaveAttribute('data-state', 'open')
     expect(screen.getByTestId('preview')).toHaveClass('min-h-0', 'flex-1')
     expect(document.querySelector('[data-slot="dialog-overlay"]')).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'wt' })).toBeInTheDocument()
+  })
+
+  it('lets a nested Radix layer consume Escape before closing the panel', () => {
+    const onOpenChange = vi.fn()
+    render(
+      <>
+        <AgentTerminalPanel card={card()} onOpenChange={onOpenChange} onReveal={() => {}} />
+        <Popover defaultOpen>
+          <PopoverTrigger>Details</PopoverTrigger>
+          <PopoverContent>Worktree details</PopoverContent>
+        </Popover>
+      </>
+    )
+
+    fireEvent.keyDown(screen.getByText('Worktree details'), { key: 'Escape' })
+
+    expect(screen.queryByText('Worktree details')).not.toBeInTheDocument()
+    expect(onOpenChange).not.toHaveBeenCalled()
+
+    fireEvent.keyDown(document.body, { key: 'Escape' })
+    expect(onOpenChange).toHaveBeenCalledWith(false)
   })
 })
