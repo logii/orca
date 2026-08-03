@@ -22,7 +22,7 @@ import './agent-board-transitions.css'
 import { translate } from '@/i18n/i18n'
 import { Button } from '@/components/ui/button'
 import { AgentMap } from './AgentMap'
-import { AgentMapInspector } from './AgentMapInspector'
+import { AgentMapInspectorDrawer } from './AgentMapInspectorDrawer'
 import { useFleetResultDisposition } from './use-fleet-result-disposition'
 
 export type AgentDashboardView = 'map' | 'board'
@@ -173,7 +173,7 @@ export function AgentKanbanBoard({
     [snapshot.cards]
   )
   const [now, setNow] = useState(() => Date.now())
-  const [terminalPanelSide, setTerminalPanelSide] = useState<'left' | 'right'>('right')
+  const [inspectorSide, setInspectorSide] = useState<'left' | 'right'>('right')
   const { reviewedPaneKeys, pinnedPaneKeys, acknowledge, markReviewed, togglePinned } =
     useFleetResultDisposition(snapshot.cards, onAckAgent)
 
@@ -242,9 +242,9 @@ export function AgentKanbanBoard({
     },
     [acknowledge]
   )
-  const handleOpenAdjacentTerminal = useCallback(
+  const handleOpenInspector = useCallback(
     (card: DashboardCard, side: 'left' | 'right') => {
-      setTerminalPanelSide(side)
+      setInspectorSide(side)
       handleOpenTerminal(card)
     },
     [handleOpenTerminal]
@@ -329,32 +329,21 @@ export function AgentKanbanBoard({
           searchInputRef={searchInputRef}
         />
         {view !== 'board' ? (
-          <div
-            className={cn(
-              'flex min-h-0 flex-1',
-              dialogCard && terminalPanelSide === 'left' && 'flex-row-reverse'
-            )}
-          >
+          <div className="flex min-h-0 flex-1">
             <AgentMap
               cards={filteredCards}
               now={now}
-              className={
-                dialogCard
-                  ? 'w-[clamp(14rem,28vw,22rem)] flex-none transition-[width] duration-200 motion-reduce:transition-none'
-                  : undefined
-              }
-              compact={dialogCard !== null}
               selectedPaneKey={dialogCard?.paneKey}
               pinnedPaneKeys={pinnedPaneKeys}
               reviewedPaneKeys={reviewedPaneKeys}
               onMarkReviewed={markReviewed}
-              onOpenTerminal={handleOpenAdjacentTerminal}
+              onOpenTerminal={handleOpenInspector}
             />
             {dialogCard ? (
-              <AgentMapInspector
+              <AgentMapInspectorDrawer
                 key={`${dialogCard.paneKey}:${dialogCard.viewMode ?? 'terminal'}`}
                 card={dialogCard}
-                side={terminalPanelSide}
+                side={inspectorSide}
                 onOpenChange={handleDialogOpenChange}
                 onReveal={onRevealAgent}
                 reviewed={reviewedPaneKeys.has(dialogCard.paneKey)}

@@ -77,7 +77,8 @@ vi.mock('./AgentTerminalDialog', () => ({
     reviewed,
     pinned,
     onMarkReviewed,
-    onTogglePinned
+    onTogglePinned,
+    className
   }: {
     card: DashboardCard | null
     onOpenChange: (open: boolean) => void
@@ -85,12 +86,14 @@ vi.mock('./AgentTerminalDialog', () => ({
     pinned?: boolean
     onMarkReviewed?: (card: DashboardCard) => void
     onTogglePinned?: (card: DashboardCard) => void
+    className?: string
   }) => (
     <div
       data-testid="terminal-panel"
       data-pty-id={card?.ptyId ?? undefined}
       data-reviewed={reviewed}
       data-pinned={pinned}
+      className={className}
     >
       <button data-testid="terminal-panel-close" onClick={() => onOpenChange(false)} />
       {card && onMarkReviewed ? (
@@ -196,7 +199,7 @@ describe('AgentKanbanBoard', () => {
     expect(screen.getByText('Needs You')).toBeInTheDocument()
   })
 
-  it('keeps the selected map visible beside its terminal panel', () => {
+  it('keeps the selected map mounted beneath its terminal drawer', () => {
     const agent = card({ paneKey: 'map-agent', conversationName: 'Map agent' })
     render(<AgentKanbanBoard snapshot={{ generatedAt: 1, cards: [agent] }} initialView="map" />)
 
@@ -204,8 +207,13 @@ describe('AgentKanbanBoard', () => {
 
     expect(screen.getByLabelText('Nested project, workspace, and agent map')).toBeInTheDocument()
     expect(screen.getByTestId('terminal-panel')).toHaveAttribute('data-pty-id', 'p1')
+    expect(screen.getByTestId('terminal-panel')).toHaveClass('m-0', 'rounded-none', 'shadow-none')
     expect(screen.getByRole('button', { name: /Map agent/ })).toHaveClass('is-selected')
-    expect(screen.queryByText('Focus view')).not.toBeInTheDocument()
+    expect(screen.getByText('Focus view')).toBeInTheDocument()
+    expect(document.querySelector('[data-slot="sheet-content"]')).toHaveClass(
+      'right-0',
+      'data-[state=open]:slide-in-from-right'
+    )
     expect(screen.queryByTestId('terminal-dialog')).not.toBeInTheDocument()
   })
 
@@ -224,8 +232,11 @@ describe('AgentKanbanBoard', () => {
     fireEvent.click(screen.getByRole('button', { name: /Native map agent/ }))
 
     const chatPanel = screen.getByTestId('chat-panel')
-    expect(chatPanel).toHaveClass('mr-0', 'slide-in-from-left-2')
-    expect(chatPanel.parentElement).toHaveClass('flex-row-reverse')
+    expect(chatPanel).toHaveClass('m-0', 'rounded-none', 'shadow-none')
+    expect(document.querySelector('[data-slot="sheet-content"]')).toHaveClass(
+      'left-0',
+      'data-[state=open]:slide-in-from-left'
+    )
     expect(screen.queryByTestId('terminal-panel')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByTestId('chat-panel-terminal'))
