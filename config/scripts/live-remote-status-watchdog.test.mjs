@@ -15,4 +15,17 @@ describe('startStatusWatchdog', () => {
       expect(typeof s.hang).toBe('boolean')
     }
   })
+
+  it('marks CLI spawn failures as infrastructure errors', async () => {
+    const watch = startStatusWatchdog({
+      intervalMs: 50,
+      timeoutMs: 1000,
+      cliCommand: 'orca-freeze-watchdog-missing-command'
+    })
+    const result = await watch.stop()
+
+    expect(result.samples.length).toBeGreaterThanOrEqual(1)
+    expect(result.samples.every((sample) => sample.infrastructureError === true)).toBe(true)
+    expect(result.samples.every((sample) => sample.hang === false)).toBe(true)
+  })
 })

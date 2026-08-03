@@ -3,13 +3,15 @@
  * Polls `orca status --json` on an interval while a load storm runs.
  */
 import { spawn } from 'node:child_process'
+import { resolveOrcaCliCommand } from './live-remote-freeze-rpc.mjs'
 
 /**
- * @param {{ intervalMs?: number, timeoutMs?: number, local?: boolean }} opts
+ * @param {{ intervalMs?: number, timeoutMs?: number, cliCommand?: string }} opts
  */
 export function startStatusWatchdog(opts = {}) {
   const intervalMs = opts.intervalMs ?? 2000
   const timeoutMs = opts.timeoutMs ?? 30_000
+  const cliCommand = opts.cliCommand ?? resolveOrcaCliCommand()
   const samples = []
   let stopped = false
   let inFlight = false
@@ -18,7 +20,7 @@ export function startStatusWatchdog(opts = {}) {
   const probe = () =>
     new Promise((resolve) => {
       const t0 = performance.now()
-      const child = spawn('orca', ['status', '--json'], {
+      const child = spawn(cliCommand, ['status', '--json'], {
         stdio: ['ignore', 'pipe', 'pipe']
       })
       let settled = false
@@ -40,14 +42,15 @@ export function startStatusWatchdog(opts = {}) {
       }, timeoutMs)
       child.stdout.on('data', () => {})
       child.stderr.on('data', () => {})
-      child.on('error', () => {
+      child.on('error', (error) => {
         clearTimeout(timer)
         finish({
           tMs: t0 - startedAt,
           ms: performance.now() - t0,
           ok: false,
           hang: false,
-          error: true
+          infrastructureError: true,
+          error: String(error)
         })
       })
       child.on('close', (code) => {

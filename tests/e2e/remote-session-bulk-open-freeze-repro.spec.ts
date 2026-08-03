@@ -40,9 +40,8 @@ const REPORT_DIR = path.join(process.cwd(), 'test-results', 'freeze-repro')
 const USE_DESKTOP_PAIR = process.env.ORCA_E2E_FREEZE_DESKTOP_PAIR === '1'
 
 test('R1 paired remote bulk-open freeze oracle @freeze-repro', async ({
-  testRepoPath,
-  testInfo
-}) => {
+  testRepoPath
+}, testInfo) => {
   test.setTimeout(420_000)
   const host = await launchHeadlessPairedRuntimeHost()
   let webClient: PairedWebClient | null = null
@@ -95,7 +94,6 @@ test('R1 paired remote bulk-open freeze oracle @freeze-repro', async ({
       reportDir: REPORT_DIR
     })
 
-    // eslint-disable-next-line no-console
     console.log('[freeze-repro R1]', JSON.stringify(report, null, 2))
 
     if (report.hardFreeze) {

@@ -135,7 +135,7 @@ export async function seedBulkOpenRemoteSessions(
                 { terminal: session.terminal, limit: 200 }
               )
               const text = result.terminal.tail.join('\n')
-              return text.includes(`READY:${session.marker}`)
+              return text.includes(`BG:${session.marker}:`)
             })
           )
           return ready.every(Boolean)

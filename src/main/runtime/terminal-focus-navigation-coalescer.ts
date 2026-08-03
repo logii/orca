@@ -28,7 +28,7 @@ export type TerminalFocusNavigationJob<TResult> = {
    * Result when this job is dropped (pending superseded) or becomes obsolete
    * mid-flight. Must not perform host navigation. Should set navigated: false.
    */
-  resolveSuperseded: () => TResult
+  resolveSuperseded: (completed?: TResult) => TResult
 }
 
 type PendingJob<TResult> = {
@@ -37,7 +37,7 @@ type PendingJob<TResult> = {
   run: (ctx: TerminalFocusNavigationContext) => Promise<TResult>
   resolve: (value: TResult) => void
   reject: (error: unknown) => void
-  resolveSuperseded: () => TResult
+  resolveSuperseded: (completed?: TResult) => TResult
 }
 
 export class TerminalFocusNavigationCoalescer<TResult> {
@@ -101,13 +101,7 @@ export class TerminalFocusNavigationCoalescer<TResult> {
             continue
           }
           const result = await job.run(ctx)
-          // A newer focus arrived during run — do not claim this result as the
-          // host's final navigation even if expensive work already started.
-          if (!ctx.isCurrent()) {
-            job.resolve(job.resolveSuperseded())
-          } else {
-            job.resolve(result)
-          }
+          job.resolve(ctx.isCurrent() ? result : job.resolveSuperseded(result))
         } catch (error) {
           if (ctx.isCurrent()) {
             job.reject(error)

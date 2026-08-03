@@ -143,7 +143,6 @@ test.describe('R2 Docker SSH bulk-open freeze', () => {
         path.join(REPORT_DIR, 'bulk-open-freeze-docker-ssh.json'),
         `${JSON.stringify(report, null, 2)}\n`
       )
-      // eslint-disable-next-line no-console
       console.log('[freeze-repro R2]', JSON.stringify(report, null, 2))
 
       // Host still producing frames (Brandon/Tim class: host alive, client stuck).

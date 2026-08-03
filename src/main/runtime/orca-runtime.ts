@@ -25920,7 +25920,8 @@ export class OrcaRuntimeService {
       // Coalesce concurrent host navigations: only the latest full reveal claims navigated.
       return this.terminalFocusNavigationCoalescer.run({
         key: handle,
-        resolveSuperseded: livePtyIdentity,
+        resolveSuperseded: (completed) =>
+          completed ? { ...completed, navigated: false } : livePtyIdentity(),
         run: async (ctx) => {
           const live = this.getLivePtyForHandle(handle)
           if (!live?.pty.connected) {
@@ -25973,9 +25974,19 @@ export class OrcaRuntimeService {
         navigated: false
       }
     }
+    const focusTerminal = this.notifier?.focusTerminal
+    if (!focusTerminal) {
+      return {
+        handle,
+        tabId: leaf.tabId,
+        worktreeId: leaf.worktreeId,
+        navigated: false
+      }
+    }
     return this.terminalFocusNavigationCoalescer.run({
       key: handle,
-      resolveSuperseded: liveLeafIdentity,
+      resolveSuperseded: (completed) =>
+        completed ? { ...completed, navigated: false } : liveLeafIdentity(),
       run: async (ctx) => {
         this.assertGraphReady()
         const { leaf: liveLeaf } = this.getLiveLeafForHandle(handle)
@@ -25987,7 +25998,7 @@ export class OrcaRuntimeService {
             navigated: false
           }
         }
-        this.notifier?.focusTerminal(liveLeaf.tabId, liveLeaf.worktreeId, liveLeaf.leafId)
+        focusTerminal(liveLeaf.tabId, liveLeaf.worktreeId, liveLeaf.leafId)
         if (!ctx.isCurrent()) {
           return {
             handle,

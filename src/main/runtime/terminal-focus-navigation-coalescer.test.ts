@@ -51,7 +51,7 @@ describe('TerminalFocusNavigationCoalescer', () => {
     const pA = coalescer.run({
       key: 'term_a',
       run: runA,
-      resolveSuperseded: () => 'super-a'
+      resolveSuperseded: (completed) => completed ?? 'super-a'
     })
     await vi.waitFor(() => {
       expect(aStarted).toBe(true)
@@ -73,8 +73,7 @@ describe('TerminalFocusNavigationCoalescer', () => {
     expect(runB).not.toHaveBeenCalled()
 
     aGate.resolve()
-    // A became obsolete after C enqueued — resolves as superseded, not full-a.
-    await expect(pA).resolves.toBe('super-a')
+    await expect(pA).resolves.toBe('obsolete-a')
     await expect(pC).resolves.toBe('full-c')
     expect(runC).toHaveBeenCalledTimes(1)
   })
@@ -141,6 +140,33 @@ describe('TerminalFocusNavigationCoalescer', () => {
     aGate.resolve()
     await expect(pA).resolves.toEqual({ id: 'a', navigated: false })
     await expect(pB).resolves.toEqual({ id: 'b', navigated: true })
+  })
+
+  it('marks a synchronous run superseded when it queues a newer job before settling', async () => {
+    const coalescer = new TerminalFocusNavigationCoalescer<{
+      id: string
+      navigated: boolean
+    }>()
+    let latest!: Promise<{ id: string; navigated: boolean }>
+
+    const first = coalescer.run({
+      key: 'term_a',
+      run: async () => {
+        latest = coalescer.run({
+          key: 'term_b',
+          run: async () => ({ id: 'b', navigated: true }),
+          resolveSuperseded: () => ({ id: 'b', navigated: false })
+        })
+        return { id: 'a', navigated: true }
+      },
+      resolveSuperseded: (completed) => ({
+        id: completed?.id ?? 'a',
+        navigated: false
+      })
+    })
+
+    await expect(first).resolves.toEqual({ id: 'a', navigated: false })
+    await expect(latest).resolves.toEqual({ id: 'b', navigated: true })
   })
 
   it('propagates run failures without stranding the queue', async () => {

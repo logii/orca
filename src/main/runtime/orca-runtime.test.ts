@@ -15524,6 +15524,39 @@ describe('OrcaRuntimeService', () => {
     expect(revealedPtyIds.at(-1)).toBe('pty-c')
   })
 
+  it('reports graph-leaf focus as not navigated without a host notifier', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    runtime.attachWindow(1)
+    runtime.syncWindowGraph(1, {
+      tabs: [
+        {
+          tabId: 'tab-leaf',
+          worktreeId: TEST_WORKTREE_ID,
+          title: 'Starting terminal',
+          activeLeafId: HEADLESS_LEAF_ID,
+          layout: null
+        }
+      ],
+      leaves: [
+        {
+          tabId: 'tab-leaf',
+          worktreeId: TEST_WORKTREE_ID,
+          leafId: HEADLESS_LEAF_ID,
+          paneRuntimeId: 1,
+          ptyId: null
+        }
+      ]
+    })
+    const [terminal] = (await runtime.listTerminals()).terminals
+
+    await expect(runtime.focusTerminal(terminal.handle)).resolves.toEqual({
+      handle: terminal.handle,
+      tabId: 'tab-leaf',
+      worktreeId: TEST_WORKTREE_ID,
+      navigated: false
+    })
+  })
+
   it('clears terminal scrollback through the PTY controller and headless buffer', async () => {
     const clearBuffer = vi.fn().mockResolvedValue(undefined)
     const runtime = new OrcaRuntimeService(store)
@@ -26381,7 +26414,8 @@ describe('OrcaRuntimeService', () => {
     await expect(runtime.focusTerminal(laptopTerminal.handle)).resolves.toEqual({
       handle: laptopTerminal.handle,
       tabId: 'laptop-tab',
-      worktreeId: TEST_WORKTREE_ID
+      worktreeId: TEST_WORKTREE_ID,
+      navigated: false
     })
     await expect(runtime.closeTerminal(laptopTerminal.handle)).resolves.toEqual({
       handle: laptopTerminal.handle,

@@ -6,6 +6,18 @@
 export const DEFAULT_SOFT_MS = 2000
 export const DEFAULT_HARD_MS = 5000
 
+export function readFreezeNumberEnv(name, fallback) {
+  const raw = process.env[name]
+  if (raw == null || raw.trim() === '') {
+    return fallback
+  }
+  const value = Number(raw)
+  if (!Number.isFinite(value)) {
+    throw new Error(`Invalid ${name}: expected a finite number, got ${JSON.stringify(raw)}`)
+  }
+  return value
+}
+
 export function extractTerminalHandle(result) {
   if (!result || typeof result !== 'object') {
     return null
@@ -172,19 +184,21 @@ export function evaluateFullAppFreeze({
   statusSlowMs = DEFAULT_STATUS_SLOW_MS,
   killOnlyRecovery = false
 }) {
+  const infrastructureErrors = statusSamples.filter((sample) => sample.infrastructureError)
   if (killOnlyRecovery) {
     return {
       foreverUiLockupObserved: true,
       longestUnhealthyWindowMs: foreverWindowMs,
       maxStatusMs: Math.max(0, ...statusSamples.map((s) => s.ms || 0)),
       unhealthySampleCount: statusSamples.length,
+      infrastructureErrorCount: infrastructureErrors.length,
       reason: 'kill-only recovery documented'
     }
   }
 
   const unhealthy = statusSamples.map((s) => {
-    const hang = Boolean(s.hang) || s.ok === false
-    const slow = (s.ms || 0) >= statusSlowMs
+    const hang = !s.infrastructureError && (Boolean(s.hang) || s.ok === false)
+    const slow = !s.infrastructureError && (s.ms || 0) >= statusSlowMs
     return { ...s, unhealthy: hang || slow }
   })
 
@@ -223,10 +237,13 @@ export function evaluateFullAppFreeze({
     longestUnhealthyWindowMs: longest,
     maxStatusMs,
     unhealthySampleCount: unhealthy.filter((s) => s.unhealthy).length,
+    infrastructureErrorCount: infrastructureErrors.length,
     reason: foreverUiLockupObserved
       ? `status unhealthy ≥${foreverWindowMs}ms continuous`
-      : maxStatusMs >= statusSlowMs
-        ? `status slow peak ${maxStatusMs}ms but no ≥${foreverWindowMs}ms window`
-        : 'status remained healthy through storm'
+      : infrastructureErrors.length > 0
+        ? `status watchdog infrastructure errors: ${infrastructureErrors.length}`
+        : maxStatusMs >= statusSlowMs
+          ? `status slow peak ${maxStatusMs}ms but no ≥${foreverWindowMs}ms window`
+          : 'status remained healthy through storm'
   }
 }

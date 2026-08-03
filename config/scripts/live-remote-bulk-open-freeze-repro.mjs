@@ -9,7 +9,7 @@
  *   ORCA_FREEZE_ENV=awin ORCA_FREEZE_CREATE=12 ORCA_FREEZE_SWITCH_PASSES=5 \
  *     ORCA_FREEZE_PARALLEL=8 node config/scripts/live-remote-bulk-open-freeze-repro.mjs
  */
-import { spawn, spawnSync } from 'node:child_process'
+import { spawnSync } from 'node:child_process'
 import { mkdirSync, writeFileSync, copyFileSync } from 'node:fs'
 import path from 'node:path'
 import {
@@ -18,98 +18,27 @@ import {
   DEFAULT_SOFT_MS,
   evaluateFreezeSignals,
   extractTerminalHandle,
+  readFreezeNumberEnv,
   shouldCapSwitchTargets,
   worktreeSelector
 } from './live-remote-bulk-open-freeze-metrics.mjs'
+import { createOrcaRpc } from './live-remote-freeze-rpc.mjs'
 
 const root = path.resolve(import.meta.dirname, '../..')
 const reportDir = path.join(root, 'test-results', 'freeze-repro')
 const envName = process.env.ORCA_FREEZE_ENV || 'awin'
-const createCount = Math.max(0, Number(process.env.ORCA_FREEZE_CREATE || '6'))
-const switchPasses = Math.max(1, Number(process.env.ORCA_FREEZE_SWITCH_PASSES || '3'))
-const parallel = Math.max(1, Number(process.env.ORCA_FREEZE_PARALLEL || '1'))
+const createCount = Math.max(0, readFreezeNumberEnv('ORCA_FREEZE_CREATE', 0))
+const switchPasses = Math.max(1, readFreezeNumberEnv('ORCA_FREEZE_SWITCH_PASSES', 3))
+const parallel = Math.max(1, readFreezeNumberEnv('ORCA_FREEZE_PARALLEL', 1))
 // 0 = no cap (use all live terminals). Only positive env values limit targets.
-const maxSwitchTargets = Math.max(0, Number(process.env.ORCA_FREEZE_MAX_SWITCH_TARGETS || '0') || 0)
-const softMs = Number(process.env.ORCA_FREEZE_SOFT_MS || DEFAULT_SOFT_MS)
-const hardMs = Number(process.env.ORCA_FREEZE_HARD_MS || DEFAULT_HARD_MS)
-const createWorktreeSpan = Math.max(1, Number(process.env.ORCA_FREEZE_CREATE_WT_SPAN || '16'))
-const preFloodMs = Math.max(0, Number(process.env.ORCA_FREEZE_PRE_FLOOD_MS || '3000'))
+const maxSwitchTargets = Math.max(0, readFreezeNumberEnv('ORCA_FREEZE_MAX_SWITCH_TARGETS', 0))
+const softMs = readFreezeNumberEnv('ORCA_FREEZE_SOFT_MS', DEFAULT_SOFT_MS)
+const hardMs = readFreezeNumberEnv('ORCA_FREEZE_HARD_MS', DEFAULT_HARD_MS)
+const createWorktreeSpan = Math.max(1, readFreezeNumberEnv('ORCA_FREEZE_CREATE_WT_SPAN', 16))
+const preFloodMs = Math.max(0, readFreezeNumberEnv('ORCA_FREEZE_PRE_FLOOD_MS', 3000))
 const scratchDir = process.env.ORCA_FREEZE_SCRATCH || ''
 
-function orcaJsonSync(args, opts = {}) {
-  const started = performance.now()
-  const result = spawnSync(
-    'orca',
-    [...args, ...(opts.local ? [] : ['--environment', envName]), '--json'],
-    {
-      encoding: 'utf8',
-      maxBuffer: 20 * 1024 * 1024,
-      timeout: opts.timeoutMs ?? 120_000
-    }
-  )
-  const elapsedMs = performance.now() - started
-  if (result.status !== 0) {
-    throw new Error(
-      `orca ${args.join(' ')} failed (${result.status}): ${result.stderr || result.stdout}`
-    )
-  }
-  const parsed = JSON.parse(result.stdout)
-  if (parsed.ok === false) {
-    throw new Error(`orca ${args.join(' ')} ok=false: ${JSON.stringify(parsed)}`)
-  }
-  return { parsed, elapsedMs, result: parsed.result }
-}
-
-function orcaJsonAsync(args, opts = {}) {
-  const started = performance.now()
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      'orca',
-      [...args, ...(opts.local ? [] : ['--environment', envName]), '--json'],
-      { stdio: ['ignore', 'pipe', 'pipe'] }
-    )
-    let stdout = ''
-    let stderr = ''
-    const timer = setTimeout(() => {
-      child.kill('SIGKILL')
-      reject(new Error(`orca ${args.join(' ')} timed out after ${opts.timeoutMs ?? 120_000}ms`))
-    }, opts.timeoutMs ?? 120_000)
-    child.stdout.setEncoding('utf8')
-    child.stderr.setEncoding('utf8')
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk
-    })
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk
-    })
-    child.on('error', (error) => {
-      clearTimeout(timer)
-      reject(error)
-    })
-    child.on('close', (code) => {
-      clearTimeout(timer)
-      const elapsedMs = performance.now() - started
-      if (code !== 0) {
-        reject(
-          new Error(`orca ${args.join(' ')} failed (${code}): ${stderr || stdout}`.slice(0, 800))
-        )
-        return
-      }
-      try {
-        const parsed = JSON.parse(stdout)
-        if (parsed.ok === false) {
-          reject(
-            new Error(`orca ${args.join(' ')} ok=false: ${JSON.stringify(parsed)}`.slice(0, 800))
-          )
-          return
-        }
-        resolve({ parsed, elapsedMs, result: parsed.result })
-      } catch (error) {
-        reject(new Error(`orca parse failed: ${error}; stdout=${stdout.slice(0, 400)}`))
-      }
-    })
-  })
-}
+const { orcaJsonSync, orcaJsonAsync } = createOrcaRpc({ envName })
 
 async function mapPool(items, concurrency, worker) {
   const results = Array.from({ length: items.length })
@@ -127,6 +56,9 @@ async function mapPool(items, concurrency, worker) {
 }
 
 function sampleOrcaIfPossible() {
+  if (process.platform !== 'darwin') {
+    return null
+  }
   try {
     const status = orcaJsonSync(['status'], { local: true }).result
     const pid = status?.app?.pid
@@ -134,11 +66,11 @@ function sampleOrcaIfPossible() {
       return null
     }
     const out = path.join(reportDir, `orca-sample-${Date.now()}.txt`)
-    spawnSync('sample', [String(pid), '5', '-file', out], {
+    const sampled = spawnSync('sample', [String(pid), '5', '-file', out], {
       timeout: 20_000,
       stdio: 'ignore'
     })
-    return out
+    return sampled.status === 0 ? out : null
   } catch {
     return null
   }
@@ -220,7 +152,7 @@ async function main() {
       } catch (error) {
         timings.push({ op: 'terminal.create', ms: null, ok: false, error: String(error), index: i })
         notes.push(`create ${i} failed: ${String(error).slice(0, 300)}`)
-        console.warn(`[live-freeze] create failed: ${error}`)
+        console.warn(`[live-freeze] create failed: ${String(error)}`)
       }
     })
   }

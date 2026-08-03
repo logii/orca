@@ -1,13 +1,16 @@
 import { spawnSync } from 'node:child_process'
 
 const extraArgs = process.argv.slice(2)
-const pnpm = process.platform === 'win32' ? 'pnpm.cmd' : 'pnpm'
+const pnpmEntry = process.env.npm_execpath
+if (!pnpmEntry) {
+  throw new Error('npm_execpath is required; run this harness through pnpm')
+}
 const env = {
   ...process.env,
   ORCA_E2E_SSH_DOCKER: '1'
 }
 
-const runtime = spawnSync(pnpm, ['run', 'ensure:electron-runtime'], {
+const runtime = spawnSync(process.execPath, [pnpmEntry, 'run', 'ensure:electron-runtime'], {
   stdio: 'inherit',
   env
 })
@@ -17,8 +20,9 @@ if (runtime.status !== 0) {
 }
 
 const result = spawnSync(
-  pnpm,
+  process.execPath,
   [
+    pnpmEntry,
     'exec',
     'playwright',
     'test',

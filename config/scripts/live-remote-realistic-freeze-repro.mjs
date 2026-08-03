@@ -21,7 +21,7 @@
 import { spawnSync } from 'node:child_process'
 import { copyFileSync, mkdirSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
-import { createOrcaRpc } from './live-remote-realistic-freeze-rpc.mjs'
+import { createOrcaRpc } from './live-remote-freeze-rpc.mjs'
 import { startStatusWatchdog } from './live-remote-status-watchdog.mjs'
 import {
   DEFAULT_FOREVER_WINDOW_MS,
@@ -33,6 +33,7 @@ import {
   evaluateRealisticFreezeSignals,
   extractTerminalHandle,
   humanPaceDelayMs,
+  readFreezeNumberEnv,
   REALISTIC_SCENARIOS,
   worktreeSelector
 } from './live-remote-bulk-open-freeze-metrics.mjs'
@@ -41,30 +42,30 @@ const root = path.resolve(import.meta.dirname, '../..')
 const reportDir = path.join(root, 'test-results', 'freeze-repro')
 const envName = process.env.ORCA_FREEZE_ENV || 'awin'
 const scenario = process.env.ORCA_FREEZE_SCENARIO || 'idle-backlog-open'
-const createCount = Math.max(0, Number(process.env.ORCA_FREEZE_CREATE || '8'))
-const openCount = Math.max(2, Number(process.env.ORCA_FREEZE_OPEN_COUNT || '20'))
-const idleMs = Math.max(0, Number(process.env.ORCA_FREEZE_IDLE_MS || '45000'))
-const paceMs = Math.max(0, Number(process.env.ORCA_FREEZE_PACE_MS || '250'))
-const paceJitterMs = Math.max(0, Number(process.env.ORCA_FREEZE_PACE_JITTER_MS || '150'))
-const createWorktreeSpan = Math.max(1, Number(process.env.ORCA_FREEZE_CREATE_WT_SPAN || '12'))
-const softMs = Number(process.env.ORCA_FREEZE_SOFT_MS || DEFAULT_SOFT_MS)
-const hardMs = Number(process.env.ORCA_FREEZE_HARD_MS || DEFAULT_HARD_MS)
+const createCount = Math.max(0, readFreezeNumberEnv('ORCA_FREEZE_CREATE', 0))
+const openCount = Math.max(2, readFreezeNumberEnv('ORCA_FREEZE_OPEN_COUNT', 20))
+const idleMs = Math.max(0, readFreezeNumberEnv('ORCA_FREEZE_IDLE_MS', 45_000))
+const paceMs = Math.max(0, readFreezeNumberEnv('ORCA_FREEZE_PACE_MS', 250))
+const paceJitterMs = Math.max(0, readFreezeNumberEnv('ORCA_FREEZE_PACE_JITTER_MS', 150))
+const createWorktreeSpan = Math.max(1, readFreezeNumberEnv('ORCA_FREEZE_CREATE_WT_SPAN', 12))
+const softMs = readFreezeNumberEnv('ORCA_FREEZE_SOFT_MS', DEFAULT_SOFT_MS)
+const hardMs = readFreezeNumberEnv('ORCA_FREEZE_HARD_MS', DEFAULT_HARD_MS)
 /** Concurrent opens during lockup-storm (wake refresh overlaps fan-out). */
-const stormParallel = Math.max(1, Number(process.env.ORCA_FREEZE_STORM_PARALLEL || '16'))
+const stormParallel = Math.max(1, readFreezeNumberEnv('ORCA_FREEZE_STORM_PARALLEL', 16))
 /** Kill a switch if it exceeds this — counts toward permanent lockup. */
-const opTimeoutMs = Math.max(10_000, Number(process.env.ORCA_FREEZE_OP_TIMEOUT_MS || '60000'))
-const permanentTimeoutMs = Math.max(15_000, Number(process.env.ORCA_FREEZE_PERMANENT_MS || '60000'))
+const opTimeoutMs = Math.max(10_000, readFreezeNumberEnv('ORCA_FREEZE_OP_TIMEOUT_MS', 60_000))
+const permanentTimeoutMs = Math.max(15_000, readFreezeNumberEnv('ORCA_FREEZE_PERMANENT_MS', 60_000))
 const foreverWindowMs = Math.max(
   10_000,
-  Number(process.env.ORCA_FREEZE_FOREVER_WINDOW_MS || DEFAULT_FOREVER_WINDOW_MS)
+  readFreezeNumberEnv('ORCA_FREEZE_FOREVER_WINDOW_MS', DEFAULT_FOREVER_WINDOW_MS)
 )
 const statusSlowMs = Math.max(
   5_000,
-  Number(process.env.ORCA_FREEZE_STATUS_SLOW_MS || DEFAULT_STATUS_SLOW_MS)
+  readFreezeNumberEnv('ORCA_FREEZE_STATUS_SLOW_MS', DEFAULT_STATUS_SLOW_MS)
 )
 const watchdogIntervalMs = Math.max(
   500,
-  Number(process.env.ORCA_FREEZE_WATCHDOG_INTERVAL_MS || '1500')
+  readFreezeNumberEnv('ORCA_FREEZE_WATCHDOG_INTERVAL_MS', 1500)
 )
 const scratchDir = process.env.ORCA_FREEZE_SCRATCH || ''
 
@@ -98,6 +99,9 @@ function floodCommand(marker) {
 }
 
 function sampleOrcaIfPossible() {
+  if (process.platform !== 'darwin') {
+    return null
+  }
   try {
     const status = orcaJsonSync(['status'], { local: true }).result
     const pid = status?.app?.pid
@@ -105,11 +109,11 @@ function sampleOrcaIfPossible() {
       return null
     }
     const out = path.join(reportDir, `orca-sample-realistic-${Date.now()}.txt`)
-    spawnSync('sample', [String(pid), '5', '-file', out], {
+    const sampled = spawnSync('sample', [String(pid), '5', '-file', out], {
       timeout: 20_000,
       stdio: 'ignore'
     })
-    return out
+    return sampled.status === 0 ? out : null
   } catch {
     return null
   }
@@ -200,7 +204,7 @@ async function main() {
           }
         } catch (error) {
           notes.push(`create ${i} failed: ${String(error).slice(0, 250)}`)
-          console.warn(`[realistic-freeze] create failed: ${error}`)
+          console.warn(`[realistic-freeze] create failed: ${String(error)}`)
         }
       }
     )
@@ -504,6 +508,9 @@ async function main() {
     foreverWindowMs,
     statusSlowMs
   })
+  const watchdogInfrastructureErrors = midStormWatch.samples.filter(
+    (sample) => sample.infrastructureError
+  )
   if (statusHangMs >= foreverWindowMs) {
     fullApp.foreverUiLockupObserved = true
     fullApp.longestUnhealthyWindowMs = Math.max(fullApp.longestUnhealthyWindowMs, statusHangMs)
@@ -565,6 +572,7 @@ async function main() {
     foreverUiLockupObserved: fullApp.foreverUiLockupObserved,
     foreverFreeze: fullApp,
     midStormStatusSamples: midStormWatch.samples,
+    watchdogInfrastructureErrorCount: watchdogInfrastructureErrors.length,
     timedOutOps,
     maxConsecutiveSwitchFailures,
     softMs,
@@ -593,11 +601,14 @@ async function main() {
       mkdirSync(scratchDir, { recursive: true })
       copyFileSync(outPath, path.join(scratchDir, 'live-realistic-freeze-report.json'))
     } catch (error) {
-      console.warn(`[realistic-freeze] scratch copy failed: ${error}`)
+      console.warn(`[realistic-freeze] scratch copy failed: ${String(error)}`)
     }
   }
 
-  if (fullApp.foreverUiLockupObserved) {
+  if (watchdogInfrastructureErrors.length > 0) {
+    process.exitCode = 3
+    console.error('[realistic-freeze] WATCHDOG INFRASTRUCTURE FAILURE')
+  } else if (fullApp.foreverUiLockupObserved) {
     process.exitCode = 5
     console.error('[realistic-freeze] FULL-APP FOREVER FREEZE (status unhealthy ≥ forever window)')
   } else if (lockup.permanentLockup) {

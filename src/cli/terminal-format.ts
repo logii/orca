@@ -165,7 +165,7 @@ export function formatTerminalSplit(result: { split: RuntimeTerminalSplit }): st
 
 export function formatTerminalFocus(result: { focus: RuntimeTerminalFocus }): string {
   if (result.focus.navigated === false) {
-    return `Focus request for terminal ${result.focus.handle} did not navigate the host UI (superseded or navigation skipped; tab ${result.focus.tabId}).`
+    return `Focus request for terminal ${result.focus.handle} was superseded or host navigation was skipped (tab ${result.focus.tabId}).`
   }
   return `Focused terminal ${result.focus.handle} (tab ${result.focus.tabId}).`
 }

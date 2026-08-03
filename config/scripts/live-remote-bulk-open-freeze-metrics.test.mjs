@@ -7,6 +7,7 @@ import {
   evaluateRealisticFreezeSignals,
   extractTerminalHandle,
   humanPaceDelayMs,
+  readFreezeNumberEnv,
   REALISTIC_SCENARIOS,
   shouldCapSwitchTargets,
   worktreeSelector
@@ -104,6 +105,31 @@ describe('live-remote-bulk-open-freeze-metrics', () => {
     expect(
       evaluateFullAppFreeze({ statusSamples: [], killOnlyRecovery: true }).foreverUiLockupObserved
     ).toBe(true)
+  })
+
+  it('does not classify watchdog infrastructure errors as an app freeze', () => {
+    const result = evaluateFullAppFreeze({
+      statusSamples: Array.from({ length: 25 }, (_, index) => ({
+        tMs: index * 1500,
+        ms: 1,
+        ok: false,
+        infrastructureError: true,
+        error: 'spawn ENOENT'
+      }))
+    })
+
+    expect(result.foreverUiLockupObserved).toBe(false)
+    expect(result.unhealthySampleCount).toBe(0)
+    expect(result.infrastructureErrorCount).toBe(25)
+  })
+
+  it('rejects invalid numeric environment values', () => {
+    process.env.ORCA_FREEZE_TEST_NUMBER = 'not-a-number'
+    expect(() => readFreezeNumberEnv('ORCA_FREEZE_TEST_NUMBER', 5)).toThrow(
+      'Invalid ORCA_FREEZE_TEST_NUMBER'
+    )
+    delete process.env.ORCA_FREEZE_TEST_NUMBER
+    expect(readFreezeNumberEnv('ORCA_FREEZE_TEST_NUMBER', 5)).toBe(5)
   })
 
   it('distinguishes recovered hard stall from permanent lockup', () => {
